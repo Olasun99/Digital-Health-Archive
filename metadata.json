@@ -1,0 +1,7 @@
+{
+  "name": "ScribeHealth",
+  "description": "Paper-to-health-data capture, digitization, and research platform for the Nigerian health system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
