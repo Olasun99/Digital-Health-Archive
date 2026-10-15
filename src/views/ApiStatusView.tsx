@@ -52,26 +52,23 @@ export const ApiStatusView: React.FC = () => {
     runHealthTest();
   };
 
-  const colabLocaltunnelCode = `# === CELL IN GOOGLE COLAB ===
+  const colabNgrokCode = `# === CELL IN GOOGLE COLAB WITH NGROK ===
 # 1. Install dependencies
-!pip install -q fastapi uvicorn python-multipart python-doctr[torch]
+!pip install -q fastapi uvicorn python-multipart python-doctr[torch] pyngrok
 
-# 2. Install localtunnel
-!npm install -g localtunnel
-
-# 3. Start FastAPI backend with docTR in background
+# 2. Start FastAPI docTR backend in background
 import subprocess, time
-
-# Run uvicorn on port 8000
 proc = subprocess.Popen(["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"])
 time.sleep(3)
 
-# 4. Expose port 8000 using localtunnel
-# Tip: Use your password from: curl https://loca.lt/mytunnelpassword
-!lt --port 8000 --subdomain nasty-melons-sleep`;
+# 3. Start ngrok tunnel on port 8000
+from pyngrok import ngrok
+# Set your auth token if needed: ngrok.set_auth_token("YOUR_TOKEN")
+tunnel = ngrok.connect(8000)
+print("🚀 Live Ngrok Endpoint:", tunnel.public_url + "/ocr")`;
 
   const copySnippet = () => {
-    navigator.clipboard.writeText(colabLocaltunnelCode);
+    navigator.clipboard.writeText(colabNgrokCode);
     setCopiedSnippet(true);
     setTimeout(() => setCopiedSnippet(false), 2000);
   };
@@ -182,51 +179,46 @@ time.sleep(3)
 
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
             <span className="text-slate-400 uppercase font-semibold text-[10px] flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 text-amber-600" /> Tunnel Bridge
+              <Clock className="w-3.5 h-3.5 text-teal-600" /> Tunnel Bridge
             </span>
             <div className="text-sm font-bold text-slate-900">
-              Localtunnel (.loca.lt)
+              Ngrok Dev Tunnel
             </div>
-            <p className="text-[11px] text-slate-500">Bypass headers enabled</p>
+            <p className="text-[11px] text-slate-500">Bypass & custom headers active</p>
           </div>
         </div>
 
-        {/* Exact explanation of why 503 happens and how to reconnect */}
-        <div className="p-5 rounded-2xl bg-amber-50/80 border border-amber-300 text-xs text-amber-950 space-y-3">
+        {/* Explanation of backend bridge and how to run in Colab */}
+        <div className="p-5 rounded-2xl bg-teal-50/80 border border-teal-200 text-xs text-teal-950 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="font-bold flex items-center gap-1.5 text-amber-900">
-              <Terminal className="w-4 h-4 text-amber-700" /> Why does "503 - Tunnel Unavailable" happen?
+            <span className="font-bold flex items-center gap-1.5 text-teal-900">
+              <Terminal className="w-4 h-4 text-teal-700" /> Google Colab docTR Backend Setup
             </span>
             <button
               onClick={copySnippet}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-white border border-amber-300 text-amber-900 text-[11px] font-semibold hover:bg-amber-100 cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-white border border-teal-300 text-teal-900 text-[11px] font-semibold hover:bg-teal-100 cursor-pointer"
             >
               {copiedSnippet ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copiedSnippet ? 'Copied' : 'Copy Colab Script'}</span>
             </button>
           </div>
 
-          <div className="space-y-2 text-amber-900 leading-relaxed">
+          <div className="space-y-2 text-teal-900 leading-relaxed">
             <p>
-              In Google Colab, Localtunnel creates a temporary reverse proxy to your running FastAPI server on port 8000.
-              <strong> 503 Tunnel Unavailable</strong> happens when:
+              Your Google Colab docTR instance connects to the app through ngrok reverse tunnel.
+              Destination Endpoint: <code className="bg-teal-100 px-1 py-0.5 rounded font-mono font-bold text-teal-900">https://retrain-smudge-retrace.ngrok-free.dev/ocr</code>.
             </p>
-            <ul className="list-disc pl-5 space-y-1 text-[11px]">
-              <li>The Google Colab notebook cell stopped executing or timed out.</li>
-              <li>The Colab runtime disconnected or entered idle sleep.</li>
-              <li>The Localtunnel process (<code className="bg-amber-100 px-1 py-0.5 rounded font-mono">lt --port 8000</code>) crashed or restarted.</li>
-            </ul>
-            <p className="font-semibold text-amber-950">How to restore connection in Colab:</p>
+            <p className="font-semibold text-teal-950">How to run in Google Colab:</p>
             <ol className="list-decimal pl-5 space-y-1 text-[11px]">
-              <li>Open your Google Colab tab and re-run the FastAPI + Localtunnel execution cell.</li>
-              <li>If Localtunnel prints a new URL, paste that new URL into the box above and click <strong>Save & Test</strong>.</li>
-              <li>Keep the Colab browser tab open so the runtime remains active.</li>
+              <li>Paste the code snippet below into a code cell in your Google Colab notebook.</li>
+              <li>Run the cell; uvicorn will launch the docTR predictor on port 8000.</li>
+              <li>Keep the Colab browser tab open while running 50+ batch extraction jobs.</li>
             </ol>
           </div>
 
           {/* Code block snippet */}
           <div className="p-3 bg-slate-900 text-slate-100 rounded-xl font-mono text-[11px] overflow-x-auto">
-            <pre>{colabLocaltunnelCode}</pre>
+            <pre>{colabNgrokCode}</pre>
           </div>
         </div>
       </div>

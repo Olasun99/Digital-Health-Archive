@@ -18,6 +18,7 @@ import { ApiStatusView } from './views/ApiStatusView';
 import { SettingsView } from './views/SettingsView';
 import { DeepScanWorkspaceView } from './views/DeepScanWorkspaceView';
 import { DataFrameStudioView } from './views/DataFrameStudioView';
+import { BackendConnectionModal } from './components/BackendConnectionModal';
 import { ocrService } from './services/ocrApi';
 import { isDemoModeActive, setDemoModeActive } from './services/storageService';
 import { Menu, X } from 'lucide-react';
@@ -28,6 +29,7 @@ export default function App() {
   const [latencyMs, setLatencyMs] = useState<number | undefined>(undefined);
   const [ocrEngineName, setOcrEngineName] = useState<string>('docTR');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+  const [isConnectionModalOpen, setIsConnectionModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
     // If no demo mode set yet, activate it by default so initial showcase presentation has rich clinical data
@@ -47,19 +49,25 @@ export default function App() {
     // Initial Health Check on Application Startup
     checkBackendHealth();
 
-    // Periodic light health polling every 30s
+    // Fast automatic reconnect polling every 12 seconds to detect Colab startup immediately
     const timer = setInterval(() => {
       checkBackendHealth();
-    }, 30000);
+    }, 12000);
 
     const handleUrlChange = () => {
       checkBackendHealth();
     };
     window.addEventListener('ocr_api_url_changed', handleUrlChange);
 
+    const handleOpenModal = () => {
+      setIsConnectionModalOpen(true);
+    };
+    window.addEventListener('open_colab_connection_modal', handleOpenModal);
+
     return () => {
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('ocr_api_url_changed', handleUrlChange);
+      window.removeEventListener('open_colab_connection_modal', handleOpenModal);
       clearInterval(timer);
     };
   }, []);
@@ -233,6 +241,7 @@ export default function App() {
           latencyMs={latencyMs}
           onDigitiseClick={() => navigateTo('/upload')}
           onNavigate={navigateTo}
+          onOpenConnectionModal={() => setIsConnectionModalOpen(true)}
         />
 
         {/* Viewport Content */}
@@ -240,6 +249,14 @@ export default function App() {
           {renderCurrentView()}
         </main>
       </div>
+
+      {/* Persistent Colab Backend Connection Modal */}
+      <BackendConnectionModal
+        isOpen={isConnectionModalOpen}
+        onClose={() => setIsConnectionModalOpen(false)}
+        apiConnected={apiConnected}
+        onRecheckHealth={checkBackendHealth}
+      />
     </div>
   );
 }

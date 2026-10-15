@@ -18,7 +18,14 @@ import {
   FileSpreadsheet,
   FileText,
   Activity,
-  AlertCircle
+  AlertCircle,
+  FlaskConical,
+  Pill,
+  UserCheck,
+  BedDouble,
+  HeartHandshake,
+  Eye,
+  Scissors
 } from 'lucide-react';
 import { storageService, StoredDocument } from '../services/storageService';
 import {
@@ -26,9 +33,15 @@ import {
   CleanDataFrameRow,
   DataFrameTelemetry,
   IMPORTANT_COLUMNS,
-  downloadDataFrameExcel,
+  downloadHospitalMultiSheetExcel,
   downloadDataFrameCsv
 } from '../services/dataFrameEngine';
+import {
+  HospitalFormType,
+  HOSPITAL_FORM_DEFINITIONS,
+  detectHospitalFormType
+} from '../services/hospitalFormsSchema';
+import { DataFrameTable } from '../components/DataFrameTable';
 
 interface DataFrameStudioViewProps {
   onNavigate: (path: string) => void;
@@ -40,19 +53,20 @@ export const DataFrameStudioView: React.FC<DataFrameStudioViewProps> = ({ onNavi
   const [activeColumns, setActiveColumns] = useState<string[]>([]);
   const [telemetry, setTelemetry] = useState<DataFrameTelemetry | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedColumnFilter, setSelectedColumnFilter] = useState<string>('all');
+  const [selectedFormType, setSelectedFormType] = useState<HospitalFormType>('all_master');
   const [isProcessing, setIsProcessing] = useState(false);
   const [showFhirPreview, setShowFhirPreview] = useState(false);
+  const [showColumnCustomizer, setShowColumnCustomizer] = useState(false);
   const [saveBanner, setSaveBanner] = useState(false);
 
   useEffect(() => {
-    loadAndTransformData();
-    const handleUpdate = () => loadAndTransformData();
+    loadAndTransformData(selectedFormType);
+    const handleUpdate = () => loadAndTransformData(selectedFormType);
     window.addEventListener('hai_data_updated', handleUpdate);
     return () => window.removeEventListener('hai_data_updated', handleUpdate);
   }, []);
 
-  const loadAndTransformData = () => {
+  const loadAndTransformData = (formType: HospitalFormType = selectedFormType) => {
     setIsProcessing(true);
     const docs = storageService.getDocuments();
     setDocuments(docs);
@@ -63,26 +77,34 @@ export const DataFrameStudioView: React.FC<DataFrameStudioViewProps> = ({ onNavi
         file: d.filename,
         filename: d.filename,
         raw_text: d.rawOcrText,
+        confidence: d.ocrConfidence ?? undefined,
         pages: d.pages,
       }));
 
-      // Execute Steps 1, 2, 3: Clean JSON → Whitelist Extraction → Pandas DataFrame
-      const result = jsonListToCleanDataFrame(jsonList);
+      // Execute Steps 1, 2, 3: Clean JSON → Form Detection → Whitelist Extraction → Pandas DataFrame
+      const result = jsonListToCleanDataFrame(jsonList, formType);
       setDataFrameRows(result.rows);
       setActiveColumns(result.activeColumns);
       setTelemetry(result.telemetry);
     } else {
       setDataFrameRows([]);
-      setActiveColumns([...IMPORTANT_COLUMNS]);
+      const defaultCols = HOSPITAL_FORM_DEFINITIONS[formType].targetColumns;
+      setActiveColumns([...defaultCols]);
       setTelemetry({
         filesProcessed: 0,
         noisyTokensRemoved: 0,
-        importantColumnsKept: IMPORTANT_COLUMNS.length,
+        importantColumnsKept: defaultCols.length,
         cleanRowsProduced: 0,
-        activeColumns: [...IMPORTANT_COLUMNS],
+        activeColumns: [...defaultCols],
+        detectedFormTypes: {},
       });
     }
     setIsProcessing(false);
+  };
+
+  const handleFormTypeChange = (newType: HospitalFormType) => {
+    setSelectedFormType(newType);
+    loadAndTransformData(newType);
   };
 
   const handleCellEdit = (rowIndex: number, columnKey: string, newValue: string) => {
@@ -102,45 +124,206 @@ export const DataFrameStudioView: React.FC<DataFrameStudioViewProps> = ({ onNavi
     setTimeout(() => setSaveBanner(false), 2000);
   };
 
+  const toggleColumnVisibility = (col: string) => {
+    setActiveColumns((prev) =>
+      prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]
+    );
+  };
+
+  /**
+   * Helper to load 5 specific hospital forms to showcase end-to-end form ingestion
+   */
+  const handleLoadSpecificHospitalForms = () => {
+    const specificHospitalScans = [
+      {
+        id: `DOC-HOSP-GOPD-${Date.now()}`,
+        filename: 'luth_gopd_card_001.jpg',
+        fileSize: 245000,
+        fileType: 'image/jpeg',
+        dateProcessed: new Date().toLocaleString(),
+        pages: 1,
+        status: 'Completed' as const,
+        ocrEngine: 'docTR (Hospital Ingest)',
+        ocrConfidence: 0.95,
+        processingTimeSeconds: 2.1,
+        rawOcrText: `LAGOS UNIVERSITY TEACHING HOSPITAL
+GENERAL OUTPATIENT DEPARTMENT (GOPD) CLINIC CARD
+Date Seen: 12/10/2026   Hospital No: LUTH-98421   Card No: GOPD-1044
+Patient Name: Babatunde Olawale Adeleke    Age: 52 yrs    Sex: Male
+Address: 14 Surulere Crescent, Lagos State
+Vital Signs: BP 145/95 mmHg   Pulse: 82 bpm   Temp: 36.8 C   Wt: 78 kg
+Chief Complaint: 3 weeks history of recurrent occipital throbbing headache and easy fatigability.
+History: Known hypertensive for 5 years with poor drug adherence. No chest pain, no blurred vision.
+Provisional Diagnosis: Essential Hypertension - Stage 2, Uncontrolled. Secondary: Tension Headache.
+Rx / Plan:
+1. Tab Amlodipine 10mg daily x 30 days
+2. Tab Lisinopril 10mg daily x 30 days
+3. Tab Paracetamol 1g tds x 3 days
+Attending Clinician: Dr. A. K. Balogun (MBBS, FMCFM)   Dept: Family Medicine / GOPD`,
+      },
+      {
+        id: `DOC-HOSP-LAB-${Date.now() + 1}`,
+        filename: 'uch_chemical_pathology_sheet.png',
+        fileSize: 310000,
+        fileType: 'image/png',
+        dateProcessed: new Date().toLocaleString(),
+        pages: 1,
+        status: 'Completed' as const,
+        ocrEngine: 'docTR (Hospital Ingest)',
+        ocrConfidence: 0.96,
+        processingTimeSeconds: 2.4,
+        rawOcrText: `UNIVERSITY COLLEGE HOSPITAL, IBADAN
+DEPARTMENT OF CHEMICAL PATHOLOGY - INVESTIGATION REPORT
+Date: 14/10/2026   Hosp No: UCH-44821   Specimen: Venous Blood
+Patient Name: Mrs. Ngozi Mary Okonkwo   Age: 46   Gender: Female
+Clinical Indication: Routine follow-up / Type 2 Diabetes Mellitus
+INVESTIGATION RESULTS:
+Fasting Blood Sugar: 7.8 mmol/L  Ref: 3.9 - 6.1
+Serum Urea: 4.8 mmol/L  Ref: 2.5 - 6.7
+Serum Creatinine: 115 umol/L  Ref: 60 - 110
+Sodium (Na+): 138 mmol/L  Ref: 135 - 145
+Potassium (K+): 4.1 mmol/L  Ref: 3.5 - 5.0
+Total Cholesterol: 5.9 mmol/L  Ref: < 5.2
+Triglycerides: 2.1 mmol/L  Ref: < 1.7
+Pathologist: Dr. O. E. Alabi (FWACP)   Lab Reg No: LAB-CHEM-2026-904`,
+      },
+      {
+        id: `DOC-HOSP-FBC-${Date.now() + 2}`,
+        filename: 'akth_haematology_fbc_report.jpg',
+        fileSize: 220000,
+        fileType: 'image/jpeg',
+        dateProcessed: new Date().toLocaleString(),
+        pages: 1,
+        status: 'Completed' as const,
+        ocrEngine: 'docTR (Hospital Ingest)',
+        ocrConfidence: 0.94,
+        processingTimeSeconds: 1.9,
+        rawOcrText: `AMINU KANO TEACHING HOSPITAL (AKTH)
+HAEMATOLOGY AND BLOOD TRANSFUSION DEPARTMENT
+Date: 13/10/2026   Hospital No: AKTH-77215
+Patient Name: Ibrahim Mustapha   Age: 29   Gender: Male
+Specimen: EDTA Whole Blood   Diagnosis: Acute Febrile Illness / Query Malaria
+HAEMATOLOGY TEST PANEL:
+Packed Cell Volume (PCV): 34 %  Ref: 40 - 52
+Haemoglobin (Hb): 11.2 g/dL  Ref: 13.0 - 17.0
+White Blood Cells (WBC): 8.4 x10^9/L  Ref: 4.0 - 11.0
+Platelets Count: 140 x10^9/L  Ref: 150 - 450
+Malaria Parasite Smear: Positive (++) Trophozoites seen
+Medical Lab Scientist: MLS K. B. Danjuma`,
+      },
+      {
+        id: `DOC-HOSP-RX-${Date.now() + 3}`,
+        filename: 'national_hospital_pharmacy_dispensing.jpg',
+        fileSize: 180000,
+        fileType: 'image/jpeg',
+        dateProcessed: new Date().toLocaleString(),
+        pages: 1,
+        status: 'Completed' as const,
+        ocrEngine: 'docTR (Hospital Ingest)',
+        ocrConfidence: 0.93,
+        processingTimeSeconds: 1.7,
+        rawOcrText: `NATIONAL HOSPITAL ABUJA - PHARMACY DEPARTMENT
+PRESCRIPTION & DRUG DISPENSING ORDER
+Date: 14/10/2026   Hosp No: NHA-10928
+Patient Name: Amina Bello   Age: 38   Sex: Female
+Prescribing Doctor: Dr. Fatima Yusuf   Clinic: GOPD
+Diagnosis: Severe Acute Uncomplicated P. Falciparum Malaria & Peptic Ulcer Disease
+PRESCRIPTION:
+1. Artemether / Lumefantrine 80/480mg Oral BD x 3 days
+2. Tab Paracetamol 1000mg Oral TDS x 3 days
+3. Cap Omeprazole 20mg Oral Daily (Morning) x 14 days
+Pharmacist Dispensed By: Pharm. E. O. Chinedu`,
+      },
+      {
+        id: `DOC-HOSP-ANC-${Date.now() + 4}`,
+        filename: 'ubth_antenatal_maternity_card.jpg',
+        fileSize: 260000,
+        fileType: 'image/jpeg',
+        dateProcessed: new Date().toLocaleString(),
+        pages: 1,
+        status: 'Completed' as const,
+        ocrEngine: 'docTR (Hospital Ingest)',
+        ocrConfidence: 0.95,
+        processingTimeSeconds: 2.2,
+        rawOcrText: `UNIVERSITY OF BENIN TEACHING HOSPITAL (UBTH)
+MATERNITY & ANTENATAL CARE (ANC) CLINIC RECORD
+Visit Date: 14/10/2026   Hospital No: UBTH-50291   Card No: ANC-2026-441
+Patient Name: Blessing Osasere   Age: 31   Parity: G3 P2+0
+EGA (Gestational Age): 28 wks   Fundal Height: 28 cm
+Fetal Heart Rate (FHR): 142 bpm (Regular)   Presentation: Cephalic
+Blood Pressure: 110/70 mmHg   Weight: 68 kg
+Urinalysis: Protein: Nil, Sugar: Nil
+Diagnosis: Normal Singleton Intrauterine Pregnancy at 28 weeks
+Routine Antenatal Rx:
+1. Tab Ferrous Sulphate 200mg Oral BD x 30 days
+2. Tab Folic Acid 5mg Oral Daily x 30 days
+3. Sulphadoxine/Pyrimethamine (IPTp-SP) 3 tabs STAT
+Attending Midwife/Obstetrician: Dr. E. I. Osagie   Dept: Obstetrics & Gynaecology`,
+      },
+    ];
+
+    specificHospitalScans.forEach((doc) => {
+      storageService.saveDocument(doc as any);
+    });
+
+    loadAndTransformData(selectedFormType);
+    setSaveBanner(true);
+    setTimeout(() => setSaveBanner(false), 3000);
+  };
+
   const filteredRows = dataFrameRows.filter((row) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
-    return Object.values(row).some((val) => typeof val === 'string' && val.toLowerCase().includes(q));
+    return Object.values(row).some(
+      (val) => typeof val === 'string' && val.toLowerCase().includes(q)
+    );
   });
 
   return (
-    <div className="p-4 md:p-8 space-y-6 max-w-[1700px] mx-auto min-h-screen flex flex-col font-sans">
+    <div className="p-4 md:p-8 space-y-6 max-w-[1750px] mx-auto min-h-screen flex flex-col font-sans">
       {/* Figma-Style Header & Action Center */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-5 md:p-6 shadow-xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+      <div className="bg-white rounded-3xl border border-slate-200/90 p-5 md:p-6 shadow-xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-slate-900 to-teal-700 flex items-center justify-center text-white shadow-md shrink-0">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#0F172A] via-[#0F4C5C] to-teal-600 flex items-center justify-center text-white shadow-md shrink-0">
             <Database className="w-6 h-6 text-teal-300" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg md:text-xl font-bold text-slate-900 tracking-tight">
-                Clinical Data Management Studio
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-lg md:text-xl font-extrabold text-slate-900 tracking-tight">
+                Hospital Clinical Data Management & DataFrame Studio
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-200 uppercase tracking-wider">
-                Pandas DataFrame Engine
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-300 uppercase tracking-wider">
+                Pandas DataFrame Pipeline
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Automated 4-step pipeline: JSON Noise Cleaning → 18 Medical Entity Whitelisting → DataFrame Deduplication → DHIS2/FHIR Ready Export
+            <p className="text-xs text-slate-500 mt-1">
+              From scanned paper hospital forms (GOPD cards, Lab investigation sheets, Prescriptions, Ward charts) → Clean JSON → Structured Dataset Columns.
             </p>
           </div>
         </div>
 
-        {/* Primary Export & Action Buttons */}
-        <div className="flex items-center gap-2.5 flex-wrap w-full lg:w-auto justify-end">
+        {/* Primary Action Buttons */}
+        <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto justify-end">
           <button
-            onClick={() => loadAndTransformData()}
+            onClick={handleLoadSpecificHospitalForms}
             disabled={isProcessing}
-            className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-            title="Re-run clean JSON-to-DataFrame pipeline"
+            className="px-3.5 py-2 rounded-xl bg-teal-50 border border-teal-200 text-teal-900 hover:bg-teal-100 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+            title="Load 5 specific hospital paper form examples (GOPD, Chem Path Lab, FBC Haematology, Pharmacy Rx, Antenatal ANC)"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isProcessing ? 'animate-spin' : ''}`} />
-            <span>Re-Run Pipeline</span>
+            <Plus className="w-3.5 h-3.5 text-teal-700" />
+            <span>Load 5 Sample Hospital Forms</span>
+          </button>
+
+          <button
+            onClick={() => setShowColumnCustomizer(!showColumnCustomizer)}
+            className={`px-3 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+              showColumnCustomizer
+                ? 'bg-slate-900 text-white border-slate-900'
+                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>Columns ({activeColumns.length})</span>
           </button>
 
           <button
@@ -152,17 +335,17 @@ export const DataFrameStudioView: React.FC<DataFrameStudioViewProps> = ({ onNavi
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>{showFhirPreview ? 'Hide FHIR Schema' : 'DHIS2 / FHIR Ready'}</span>
+            <span>{showFhirPreview ? 'Hide FHIR Schema' : 'FHIR / DHIS2 Ready'}</span>
           </button>
 
           <button
-            onClick={() => downloadDataFrameExcel(filteredRows, activeColumns)}
+            onClick={() => downloadHospitalMultiSheetExcel(filteredRows, activeColumns)}
             disabled={filteredRows.length === 0}
             className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-            title="Download clean Excel spreadsheet"
+            title="Download multi-sheet hospital workbook: Master, Laboratory Panel, Prescriptions, and Encounters"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
-            <span>Download Clean Excel</span>
+            <span>Download Multi-Sheet Excel</span>
           </button>
 
           <button
@@ -172,38 +355,122 @@ export const DataFrameStudioView: React.FC<DataFrameStudioViewProps> = ({ onNavi
             title="Download clean CSV"
           >
             <Download className="w-4 h-4 text-slate-300" />
-            <span>Download Clean CSV</span>
+            <span>Download CSV</span>
           </button>
         </div>
       </div>
 
-      {/* Mandatory Telemetry Banner:
-          "Extracted 20 files → Removed 150 noisy words → Kept 8 important columns → 20 clean rows" */}
+      {/* Hospital Form Type Selector Tabs */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-2 shadow-xs flex items-center gap-1.5 overflow-x-auto text-xs">
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-3 whitespace-nowrap">
+          Hospital Form View:
+        </span>
+        {(Object.keys(HOSPITAL_FORM_DEFINITIONS) as HospitalFormType[]).map((fType) => {
+          const def = HOSPITAL_FORM_DEFINITIONS[fType];
+          const isSelected = selectedFormType === fType;
+          return (
+            <button
+              key={fType}
+              onClick={() => handleFormTypeChange(fType)}
+              className={`px-3.5 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+                isSelected
+                  ? 'bg-[#0F4C5C] text-white shadow-xs'
+                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              {fType === 'laboratory_report' && <FlaskConical className="w-3.5 h-3.5 text-teal-300" />}
+              {fType === 'pharmacy_prescription' && <Pill className="w-3.5 h-3.5 text-amber-300" />}
+              {fType === 'outpatient_card' && <UserCheck className="w-3.5 h-3.5 text-blue-300" />}
+              {fType === 'inpatient_ward' && <BedDouble className="w-3.5 h-3.5 text-indigo-300" />}
+              {fType === 'antenatal_maternity' && <HeartHandshake className="w-3.5 h-3.5 text-rose-300" />}
+              {fType === 'all_master' && <Layers className="w-3.5 h-3.5 text-teal-300" />}
+              <span>{def.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Column Customizer Drawer (Collapsible) */}
+      {showColumnCustomizer && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-teal-700" />
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Active Dataset Column Builder ({activeColumns.length} Selected)
+              </h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveColumns([...IMPORTANT_COLUMNS])}
+                className="text-[11px] text-teal-700 hover:underline font-semibold cursor-pointer"
+              >
+                Select All
+              </button>
+              <span className="text-slate-300">•</span>
+              <button
+                onClick={() =>
+                  setActiveColumns(HOSPITAL_FORM_DEFINITIONS[selectedFormType].targetColumns)
+                }
+                className="text-[11px] text-teal-700 hover:underline font-semibold cursor-pointer"
+              >
+                Reset to Form Template
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 pt-1">
+            {IMPORTANT_COLUMNS.map((col) => {
+              const isActive = activeColumns.includes(col);
+              return (
+                <label
+                  key={col}
+                  className={`flex items-center gap-2 p-2 rounded-xl border text-[11px] cursor-pointer transition-colors ${
+                    isActive
+                      ? 'bg-teal-50 border-teal-300 text-teal-900 font-semibold'
+                      : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isActive}
+                    onChange={() => toggleColumnVisibility(col)}
+                    className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                  />
+                  <span className="truncate">{col.replace(/_/g, ' ')}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 4-Step Telemetry Bar */}
       {telemetry && (
         <div className="bg-gradient-to-r from-teal-50 via-slate-50 to-indigo-50 border border-teal-200/90 rounded-2xl p-4 md:p-5 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-              <Sparkles className="w-4 h-4" />
+            <div className="w-9 h-9 rounded-xl bg-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <Sparkles className="w-4 h-4 text-teal-200" />
             </div>
             <div>
               <div className="text-[11px] font-bold text-teal-900 uppercase tracking-wider">
-                Data Management Pipeline Telemetry
+                Automated 4-Step Hospital Pipeline Telemetry
               </div>
               <div className="text-xs md:text-sm font-semibold text-slate-800 flex items-center gap-2 flex-wrap mt-0.5">
                 <span className="font-mono bg-white px-2 py-0.5 rounded border border-teal-200 text-slate-900 font-bold">
-                  Extracted {telemetry.filesProcessed} files
+                  1. Ingested {telemetry.filesProcessed} hospital files
                 </span>
                 <span className="text-teal-600 font-bold">→</span>
                 <span className="font-mono bg-white px-2 py-0.5 rounded border border-rose-200 text-rose-800 font-bold">
-                  Removed {telemetry.noisyTokensRemoved} noisy tokens (&lt; 0.40 conf / symbols)
+                  2. Stripped {telemetry.noisyTokensRemoved} noise tokens (&lt; 0.40 conf / fillers)
                 </span>
                 <span className="text-teal-600 font-bold">→</span>
                 <span className="font-mono bg-white px-2 py-0.5 rounded border border-purple-200 text-purple-900 font-bold">
-                  Kept {telemetry.importantColumnsKept} important columns
+                  3. Extracted {telemetry.importantColumnsKept} whitelist columns
                 </span>
                 <span className="text-teal-600 font-bold">→</span>
                 <span className="font-mono bg-white px-2 py-0.5 rounded border border-emerald-200 text-emerald-900 font-bold">
-                  {telemetry.cleanRowsProduced} clean rows ready
+                  4. {telemetry.cleanRowsProduced} clean rows ready
                 </span>
               </div>
             </div>
@@ -211,7 +478,7 @@ export const DataFrameStudioView: React.FC<DataFrameStudioViewProps> = ({ onNavi
 
           <div className="flex items-center gap-2 text-xs text-slate-500 shrink-0">
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Zero Raw JSON Shown
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Whitelist Enforced • No Junk
             </span>
           </div>
         </div>
@@ -230,161 +497,26 @@ export const DataFrameStudioView: React.FC<DataFrameStudioViewProps> = ({ onNavi
             </span>
           </div>
           <p className="text-xs text-purple-200 leading-relaxed max-w-4xl">
-            This clean DataFrame adheres strictly to the 18 whitelisted clinical entities. Columns map directly into
-            FHIR R4 resources (<code className="text-teal-300 font-mono">Patient</code>,{' '}
-            <code className="text-teal-300 font-mono">Condition</code>,{' '}
-            <code className="text-teal-300 font-mono">Observation</code>, and{' '}
-            <code className="text-teal-300 font-mono">MedicationRequest</code>) and DHIS2 aggregate data-element values
-            without unnecessary metadata or junk OCR tokens.
+            This clean DataFrame maps hospital paper data directly into FHIR R4 resources:
+            <code className="text-teal-300 font-mono ml-1">Patient</code> (Demographics),{' '}
+            <code className="text-teal-300 font-mono">Observation</code> (Lab tests with values, units, reference ranges, and abnormal flags),{' '}
+            <code className="text-teal-300 font-mono">Condition</code> (Primary and secondary diagnoses), and{' '}
+            <code className="text-teal-300 font-mono">MedicationRequest</code> (Prescriptions with dosage, route, and frequency).
           </p>
         </div>
       )}
 
-      {/* Filter & Search Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search cleaned DataFrame by patient name, diagnosis, MRN, lab test, drug name, or date..."
-            className="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 font-medium"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 overflow-x-auto text-xs text-slate-600">
-          <span className="font-semibold text-slate-400 text-[11px] uppercase whitespace-nowrap">
-            Showing:
-          </span>
-          <span className="px-2.5 py-1 rounded-lg bg-teal-50 text-teal-800 border border-teal-200 font-bold whitespace-nowrap">
-            {filteredRows.length} Rows • {activeColumns.length} Active Columns
-          </span>
-        </div>
-      </div>
-
-      {saveBanner && (
-        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          <span>DataFrame updated in memory. Ready for export.</span>
-        </div>
-      )}
-
-      {/* Professional Figma-Grade Interactive Data Grid */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs flex-1 flex flex-col overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
-          <div className="flex items-center gap-2">
-            <TableIcon className="w-4 h-4 text-teal-700" />
-            <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-              Clean Medical DataFrame Grid
-            </h2>
-          </div>
-          <span className="text-[11px] text-slate-400 italic">
-            Click any cell to edit inline • Fully sanitized
-          </span>
-        </div>
-
-        <div className="flex-1 overflow-auto max-h-[600px]">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-100 sticky top-0 text-slate-700 font-bold border-b border-slate-200 z-10 text-[10px] uppercase tracking-wider">
-              <tr>
-                <th className="py-3 px-3 whitespace-nowrap w-10 text-center">#</th>
-                {activeColumns.map((col) => (
-                  <th key={col} className="py-3 px-3.5 whitespace-nowrap">
-                    <div className="flex items-center gap-1.5">
-                      <span>{col.replace(/_/g, ' ')}</span>
-                    </div>
-                  </th>
-                ))}
-                <th className="py-3 px-3 whitespace-nowrap text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredRows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={activeColumns.length + 2}
-                    className="py-16 text-center text-slate-400 italic space-y-2"
-                  >
-                    <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-300 mx-auto">
-                      <TableIcon className="w-6 h-6" />
-                    </div>
-                    <p className="text-xs font-semibold text-slate-600">
-                      {searchQuery
-                        ? 'No records match your search filter.'
-                        : 'No documents processed into DataFrame yet.'}
-                    </p>
-                    <p className="text-[11px] text-slate-400">
-                      Upload clinical cards or lab reports to populate the clean DataFrame.
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                filteredRows.map((row, rowIdx) => (
-                  <tr
-                    key={rowIdx}
-                    className="hover:bg-teal-50/40 transition-colors group text-[11px]"
-                  >
-                    <td className="py-2 px-3 text-center text-slate-400 font-mono text-[10px]">
-                      {rowIdx + 1}
-                    </td>
-
-                    {activeColumns.map((col) => {
-                      const val = row[col] || '';
-                      const isName = col === 'Patient_Name';
-                      const isMrn = col === 'Hospital_Number' || col === 'Card_Number';
-                      const isDiag = col === 'Diagnosis';
-
-                      return (
-                        <td
-                          key={col}
-                          className={`py-2 px-3.5 whitespace-nowrap border-r border-slate-100/60 ${
-                            isName ? 'font-bold text-slate-900' : isMrn ? 'font-mono text-teal-800 font-bold' : isDiag ? 'font-medium text-slate-800' : 'text-slate-600'
-                          }`}
-                        >
-                          <input
-                            type="text"
-                            value={val}
-                            onChange={(e) => handleCellEdit(rowIdx, col, e.target.value)}
-                            placeholder="—"
-                            className="bg-transparent border-b border-transparent hover:border-slate-300 focus:border-teal-500 focus:bg-white w-full px-1 py-0.5 rounded text-[11px] font-inherit text-inherit transition-all"
-                          />
-                        </td>
-                      );
-                    })}
-
-                    <td className="py-2 px-3 text-right whitespace-nowrap">
-                      <button
-                        onClick={() => handleDeleteRow(rowIdx)}
-                        className="p-1 rounded text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Delete row"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Footer info bar */}
-        <div className="p-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] text-slate-500 px-4">
-          <span>
-            DataFrame contains {filteredRows.length} cleaned observation rows • Whitelist enforced
-          </span>
-          <div className="flex items-center gap-4">
-            <span>Empty columns dropped automatically per Pandas rule</span>
-            <button
-              onClick={() => onNavigate('/upload')}
-              className="text-teal-700 font-bold hover:underline cursor-pointer"
-            >
-              + Ingest More Documents
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* High-Fidelity Clinical DataFrame Table Grid */}
+      <DataFrameTable
+        rows={dataFrameRows}
+        activeColumns={activeColumns}
+        onCellEdit={handleCellEdit}
+        onDeleteRow={handleDeleteRow}
+        onRowsUpdate={setDataFrameRows}
+        onNavigate={onNavigate}
+        title={`${HOSPITAL_FORM_DEFINITIONS[selectedFormType].label} Grid`}
+        subtitle="Sticky headers, column-level sorting, instant click-to-edit verification & patient duplicate prevention"
+      />
     </div>
   );
 };

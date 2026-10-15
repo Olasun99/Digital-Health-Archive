@@ -18,6 +18,7 @@ interface TopHeaderProps {
   latencyMs?: number;
   onDigitiseClick: () => void;
   onNavigate: (path: string) => void;
+  onOpenConnectionModal?: () => void;
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -27,6 +28,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   latencyMs,
   onDigitiseClick,
   onNavigate,
+  onOpenConnectionModal,
 }) => {
   const ocrBaseUrl = getOcrApiBaseUrl();
   const demoActive = isDemoModeActive();
@@ -51,7 +53,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         {/* Quick Action */}
         <button
           onClick={onDigitiseClick}
-          className="hidden sm:inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-[#0F4C5C] hover:bg-[#0c3c49] text-white text-xs font-semibold shadow-xs transition-colors"
+          className="hidden sm:inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-[#0F4C5C] hover:bg-[#0c3c49] text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
         >
           <UploadCloud className="w-4 h-4 text-teal-300" />
           <span>+ Digitise Documents</span>
@@ -59,22 +61,32 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
         {/* API Status Indicator */}
         <div
-          onClick={() => onNavigate('/api-status')}
-          className="cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-medium transition-colors"
-          title={`Backend: ${ocrBaseUrl} ${latencyMs ? `(${latencyMs}ms)` : ''}`}
+          onClick={() => {
+            if (onOpenConnectionModal) {
+              onOpenConnectionModal();
+            } else {
+              onNavigate('/api-status');
+            }
+          }}
+          className={`cursor-pointer flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+            apiConnected
+              ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-900'
+              : 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-900'
+          }`}
+          title={`Backend: ${ocrBaseUrl} ${latencyMs ? `(${latencyMs}ms)` : ''} — Click to manage Colab connection`}
         >
           <div className="flex items-center gap-1.5">
             <span
               className={`w-2 h-2 rounded-full ${
-                apiConnected ? 'bg-emerald-500 ring-2 ring-emerald-200' : 'bg-rose-500 ring-2 ring-rose-200'
+                apiConnected ? 'bg-emerald-500 ring-2 ring-emerald-200 animate-pulse' : 'bg-rose-500 ring-2 ring-rose-200'
               }`}
             />
-            <span className="text-slate-700">
-              {apiConnected ? 'API Connected' : 'API Offline'}
+            <span className="font-semibold">
+              {apiConnected ? 'Colab Online' : 'Colab Offline (Click to connect)'}
             </span>
           </div>
           {latencyMs && apiConnected && (
-            <span className="text-[10px] text-slate-400 font-mono">
+            <span className="text-[10px] text-emerald-700 font-mono">
               {latencyMs}ms
             </span>
           )}
